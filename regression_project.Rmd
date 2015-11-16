@@ -1,0 +1,143 @@
+---
+output: pdf_document
+---
+Regression Analysis: Is an Automatic or Manual Transmission better for MPG?
+===================================================================================
+## Executive Summary
+This report addresses the question of whether an automatic or manual transmission is
+better for MPG.  In answering this question, I attempt to quantify any MPG difference
+between automatic and manual transmissions.  After exploration and model fitting,
+I conclude that a manual transmission is better for MPG and the difference is signficant.
+My final model indicates that holding all else constant, I expect a manual transmission
+to have 2.94 higher MPG that an automatic car.  It is important to note that while
+transmission type is significant, the most significant factor in my model is weight.
+For every 1000lb increase in weight, I expect that car to drop 3.92 MPG.
+
+##Exploratory Analysis
+#### Load All Necessary Packages
+```{r}
+library(GGally);library(ggplot2);library(printr);library(car)
+```
+#### Data Description
+A quick glance at the data set reveals the structure and the data available for our model.
+```{r}
+head(mtcars, n = 2)
+dim(mtcars)
+```
+First, I plot MPG by transmission and see if there is a difference visually.
+```{r}
+g <- ggplot(mtcars, aes(x = factor(am), y = mpg, fill = factor(am)))+
+  geom_boxplot()+ coord_flip()+ xlab("Transmission Type")+ ylab("MPG")+
+  ggtitle("Miles per Gallon by Transmission Type")+
+  scale_fill_discrete(name = "Transmission Type", labels = c("Automatic", "Manual"))
+```
+Using the boxplot(Figure A), my initial hypothesis is that a significant difference exists,
+with manual transmissions having higher MPG than automatic transmissions.
+
+I perform a Student's T-Test to test for a statistically significant different between
+the means of the two groups--in this case automatic and manual transmission. Our null
+hypothesis is that there is no difference between the means.
+```{r}
+t <- t.test(mtcars$mpg ~ factor(mtcars$am))
+```
+With a p value of of `r round(t$p.value, 3)` it is very unlikely a difference this large is 
+due to chance and I reject the null hypothesis.
+
+## Model Fitting
+#### Single Variable Linear Model
+My first model is a single variable model using transmission as the only variable.
+
+```{r}
+fit_am <- lm(mpg~ factor(am), mtcars)
+fit_am
+```
+This simple model uses automatic transmissions as the baseline. The intercept of 17.147
+is the mean mpg of cars with automatic transmissions. An am1 coefficient of 7.245 means
+a car, holding all else in the model constant, gets 7.245 mpg higher with a manual
+transmission.
+
+With a p-value of .0003, this is a highly significant result and seems to indicate 
+transmission is a key variable in fuel efficiency.  Looking at our adjusted r-squared,
+however, this model only explains `r round(summary(fit_am)$adj.r.squared, 3)` of the 
+variation. With a single variable, this model could be confounding the effects of other
+variables and attributing them to transmission.  More exploration is needed.
+
+#### Multiple Variable Regression Model
+
+```{r}
+mfit1 <- lm(mpg ~ cyl+disp+hp+drat+wt+qsec+factor(vs)+factor(am)+gear+carb , mtcars)
+mfit1
+```
+I start by fitting a model with all variables.  Looking at the summary, none of the 
+variables are significant at the .05 level.  However, this is probably due to
+correlation amongst the variables.  It makes intuitive sense that variables like cyl
+and hp would be highly correlated.  Looking at a correlation table we can see the correlation 
+between variables.
+```{r}
+round(cor(mtcars), 3)
+```
+
+We have significant collinearity.  This can mislead as to the importance of predictors
+and can lead to imprecise coefficients.  The recommended solution is removing variables 
+which are, in effect, trying to do the same job.
+
+The major decision in this analysis is which method to use for model variable selection.
+Generally, criterion-based methods are recommended over stepwise methods as they 
+search over a wider space and don't use hypothesis testing to choose between models.
+
+Although Mallow's Cp criterion achieved the higest adjusted r-squared, it added two 
+variables with significant collinearity for a very minimal gain in adjusted r-squared.
+I will use Akaike Information Criterion(AIC) as the criteria for evaluating how well 
+my model is fit.  Our goal is to minimize AIC.
+```{r, results = 'hide'}
+step <- step(mfit1, direction = 'both')
+```
+```{r, echo = FALSE}
+summary(step)$call
+```
+```{r}
+final_model <- lm(mpg ~ wt + qsec + factor(am), data = mtcars)
+no_am <- lm(mpg ~ wt + qsec, data = mtcars)
+summary(final_model)
+```
+```{r, results = 'hide'}
+anova(no_am, final_model)
+```
+
+This model has a respectable adjusted r-squared of `r round(summary(step)$adj.r.squared, 3)`.
+All values in the model are significant at the .05 level.  Here, holding all other variables
+constant, we expect 2.94 MPG greater from a manual transmission than an automatic.
+Note, however, that transmission is the least significant variable in our model.
+Both weight(for obvious reasons) and qsec(likely capturing some aspect of engine power)
+are far more significant when looking at p-values. The p-value from the analysis of
+variance between the model with transmission and without is `r round(anova(no_am, final_model)$'Pr(>F)'[2], 3)`.
+This indicates the inclusion of transmission makes the model better, but again, it is a very
+close call. A larger dataset would be a good starting point for further analysis.
+
+Residual plots in the appendix check for homoscedasticity, linearity, normality and outliers.
+Plotting our residuals vs our fitted values (Figure B) we see constant variance in our
+residuals with no fanning or nonlinear trends.  I also plot residuals against our
+predictors and look for the same sort of inconsistant variance or nonlinearity. Overall,
+our residual plots reveal nothing to be alarmed about
+
+### Appendix:
+#### Figure A: MPG by Transmission Type
+```{r, echo = FALSE, boxplot_am, fig.width = 12, fig.height = 3}
+g
+```
+
+#### Figure B: Residuals vs Predictors and Residuals vs Fitted Values
+```{r, residual_plots, fig.width = 12,fig.height = 4, results = 'hide'}
+par(mfrow = c(2,2))
+residualPlots(step)
+```
+
+#### Figure C: Normality of Residuals
+```{r, normality_test, fig.width = 12}
+qqPlot(step)
+```
+
+#### Figure D: Outlier and High Leverage Points
+```{r, outlier_leverage_plot, fig.width = 12, fig.height = 8}
+influenceIndexPlot(step, id.n = 3)
+```
